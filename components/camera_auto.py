@@ -9,7 +9,9 @@ from services.gemini_service import (
     get_gemini_api_key,
     init_gemini,
     generate_suggestion_for_current_emotion,
+    create_emotion_intro,
 )
+from services.tts_service import text_to_speech_file, estimate_speech_duration, cleanup_audio_file
 
 
 class EmotionVideoProcessor(VideoProcessorBase):
@@ -55,6 +57,10 @@ def render_camera_auto(interval_seconds: int = 15):
         st.session_state.last_detection_time = 0
     if "waiting_for_ai" not in st.session_state:
         st.session_state.waiting_for_ai = False
+    if "is_playing_audio" not in st.session_state:
+        st.session_state.is_playing_audio = False
+    if "current_audio_file" not in st.session_state:
+        st.session_state.current_audio_file = None
     
     # Control buttons
     col1, col2, col3 = st.columns(3)
@@ -79,6 +85,9 @@ def render_camera_auto(interval_seconds: int = 15):
     with col3:
         auto_mode = st.checkbox("🔄 Tự động detect", value=False, key="auto_detect_mode")
     
+    # TTS settings
+    tts_enabled = st.checkbox("🔊 Bật đọc text-to-speech", value=True, key="tts_enabled")
+    
     # Khởi tạo force_detect flag
     if "force_detect" not in st.session_state:
         st.session_state.force_detect = False
@@ -94,6 +103,7 @@ def render_camera_auto(interval_seconds: int = 15):
     chart_placeholder = st.empty()
     suggestion_placeholder = st.empty()
     status_placeholder = st.empty()
+    audio_placeholder = st.empty()
 
     if webrtc_ctx.video_processor is not None:
         processor = webrtc_ctx.video_processor
@@ -222,7 +232,48 @@ def render_camera_auto(interval_seconds: int = 15):
                                     suggestion_placeholder.markdown(
                                         f"### 💬 Gợi ý từ trợ lý cảm xúc\n\n{suggestion_text}"
                                     )
-                                    status_placeholder.success("✅ **AI đã trả lời xong!** Sẵn sàng detect cảm xúc tiếp theo.")
+                                    
+                                    # Tạo và phát audio nếu TTS được bật
+                                    if tts_enabled:
+                                        st.session_state.is_playing_audio = True
+                                        
+                                        # Tạo câu giới thiệu cảm xúc
+                                        emotion_intro = create_emotion_intro(dominant_emotion)
+                                        
+                                        # Nối câu giới thiệu với response từ AI
+                                        full_text_to_speak = emotion_intro + suggestion_text
+                                        
+                                        # Tạo audio file
+                                        with st.spinner("🔊 Đang tạo audio..."):
+                                            audio_file = text_to_speech_file(full_text_to_speak, lang="vi", slow=False)
+                                        
+                                        if audio_file:
+                                            st.session_state.current_audio_file = audio_file
+                                            
+                                            # Phát audio trong Streamlit
+                                            audio_placeholder.audio(audio_file, format="audio/mp3", autoplay=True)
+                                            
+                                            # Ước tính thời gian (bao gồm cả intro)
+                                            estimated_duration = estimate_speech_duration(full_text_to_speak)
+                                            status_placeholder.info(
+                                                f"🔊 **Đang phát audio...** (ước tính ~{int(estimated_duration)}s). "
+                                                "Sau khi phát xong sẽ detect cảm xúc tiếp theo."
+                                            )
+                                            
+                                            # Đợi audio phát xong (ước tính)
+                                            time.sleep(estimated_duration + 1)  # +1s buffer
+                                            
+                                            # Cleanup audio file
+                                            cleanup_audio_file(audio_file)
+                                            st.session_state.is_playing_audio = False
+                                            st.session_state.current_audio_file = None
+                                            
+                                            status_placeholder.success("✅ **Đã đọc xong!** Sẵn sàng detect cảm xúc tiếp theo.")
+                                        else:
+                                            st.session_state.is_playing_audio = False
+                                            status_placeholder.warning("⚠️ Không thể tạo audio. Tiếp tục detect cảm xúc...")
+                                    else:
+                                        status_placeholder.success("✅ **AI đã trả lời xong!** Sẵn sàng detect cảm xúc tiếp theo.")
                             else:
                                 suggestion_placeholder.error(
                                     f"❌ **Không nhận được phản hồi từ Gemini!**\n\n"
@@ -230,10 +281,12 @@ def render_camera_auto(interval_seconds: int = 15):
                                 )
                                 status_placeholder.error("❌ Không nhận được response từ AI")
                             
-                            # Nếu auto mode, tự động detect tiếp sau khi có response
+                            # Nếu auto mode, tự động detect tiếp sau khi có response và audio phát xong
                             if auto_mode and suggestion_text and not suggestion_text.startswith("⚠️"):
-                                time.sleep(2)  # Đợi 2s để user đọc response
-                                st.rerun()
+                                if not tts_enabled or not st.session_state.is_playing_audio:
+                                    # Nếu không có TTS hoặc audio đã phát xong, đợi một chút rồi detect tiếp
+                                    time.sleep(1)  # Đợi 1s để user đọc response
+                                    st.rerun()
                         else:
                             # Emotion không đổi, hiển thị suggestion cũ nhưng vẫn tiếp tục detect
                             if st.session_state.last_gemini_suggestion:

@@ -21,6 +21,31 @@ emotion_emoji = {
     "neutral": "😐",
 }
 
+# Map emotion -> Vietnamese name
+emotion_vietnamese = {
+    "angry": "tức giận",
+    "disgust": "ghê tởm",
+    "fear": "sợ hãi",
+    "happy": "vui vẻ",
+    "sad": "buồn bã",
+    "surprise": "ngạc nhiên",
+    "neutral": "bình thường",
+}
+
+
+def create_emotion_intro(emotion: str) -> str:
+    """
+    Tạo câu giới thiệu cảm xúc bằng tiếng Việt.
+    
+    Args:
+        emotion: Emotion name (e.g., "happy", "sad")
+    
+    Returns:
+        Vietnamese introduction sentence
+    """
+    emotion_vi = emotion_vietnamese.get(emotion, emotion)
+    return f"Bạn đang ở cảm xúc {emotion_vi}. "
+
 def get_gemini_api_key() -> Optional[str]:
     """Get Gemini API key from various sources."""
 
