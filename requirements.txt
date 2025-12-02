@@ -1,0 +1,9 @@
+streamlit
+deepface
+opencv-python-headless
+numpy
+Pillow
+streamlit-webrtc
+streamlit-autorefresh
+
+
