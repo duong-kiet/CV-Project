@@ -5,5 +5,7 @@ numpy
 Pillow
 streamlit-webrtc
 streamlit-autorefresh
+google-generativeai
+python-dotenv
 
 

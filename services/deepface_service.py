@@ -1,3 +1,10 @@
+import os
+
+# Workaround cho xung đột protobuf mới với TensorFlow cũ (DeepFace dùng TF 2.10.x).
+# Tham khảo gợi ý từ thông báo lỗi protobuf:
+#   PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
+
 import numpy as np
 from deepface import DeepFace
 from PIL import Image
