@@ -8,8 +8,10 @@ from services.deepface_service import analyze_emotion
 from services.gemini_service import (
     get_gemini_api_key,
     init_gemini,
-    generate_suggestion_for_current_emotion,
     create_emotion_intro,
+)
+from services.emotion_agent_service import (
+    generate_advice_with_memory_from_result,
 )
 from services.tts_service import text_to_speech_file, estimate_speech_duration, cleanup_audio_file
 
@@ -205,11 +207,15 @@ def render_camera_auto(interval_seconds: int = 15):
                             st.session_state.is_gemini_processing = True
                             st.session_state.waiting_for_ai = True
 
-                            # Gọi Gemini và đợi response (blocking) với spinner
+                            # Gọi Gemini + SQLite (memory) và đợi response (blocking) với spinner
                             with st.spinner(f"🤔 AI trợ lý cảm xúc đang suy nghĩ về cảm xúc '{dominant_emotion}'..."):
                                 try:
-                                    suggestion_text = generate_suggestion_for_current_emotion(
-                                        model, dominant_emotion
+                                    # Sử dụng agent có memory (SQLite) thay vì chỉ cảm xúc hiện tại
+                                    suggestion_text = generate_advice_with_memory_from_result(
+                                        model=model,
+                                        dominant_emotion=dominant_emotion,
+                                        emotions=emotions,
+                                        user_id="default_user",
                                     )
                                 except Exception as e:
                                     suggestion_text = f"⚠️ Lỗi khi gọi Gemini: {str(e)}"
