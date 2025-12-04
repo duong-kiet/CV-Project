@@ -40,30 +40,24 @@ try:
     # List models
     print("📋 Đang lấy danh sách models...")
     models = genai.list_models()
-    available = [m.name.replace("models/", "") for m in models if "generateContent" in m.supported_generation_methods]
+    available = [m.name.replace("models/", "") for m in models
+                if "generateContent" in m.supported_generation_methods]
+
     print(f"✅ Tìm thấy {len(available)} models khả dụng")
-    
-    # Chọn model
-    preferred = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
-    selected = None
-    for pref in preferred:
-        if any(pref in m for m in available):
-            selected = pref
-            break
-    
-    if not selected and available:
-        selected = available[0]
-    
+
+    preferred = [
+        "gemini-2.0-flash",
+        "gemini-1.5-pro",
+        "gemini-1.5-flash",
+    ]
+
+    selected = next((m for m in preferred if m in available), None)
+
     if not selected:
-        print("❌ Không tìm thấy model nào!")
-        sys.exit(1)
-    
+        selected = available[0]
+
     print(f"✅ Chọn model: {selected}")
-    
-    # Test generate content
-    print(f"\n🤔 Đang test generate content với emotion 'happy'...")
     model = genai.GenerativeModel(selected)
-    
     prompt = """Bạn là một trợ lý cảm xúc chuyên nghiệp. Hiện tại người dùng đang có cảm xúc: happy 😄
 
 Hãy đưa ra một gợi ý hỗ trợ ngắn gọn và phù hợp với cảm xúc hiện tại của người dùng. Format (trả lời bằng tiếng Việt):
