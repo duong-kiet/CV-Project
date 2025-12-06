@@ -6,7 +6,7 @@ from deepface.modules import detection
 from torchvision import transforms
 from PIL import Image
 
-from model.MLT import MLT
+from services.MLT import MLT
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
@@ -25,7 +25,7 @@ transform = transforms.Compose([
 
 emotion_model = MLT()
 emotion_model.load_state_dict(torch.load(
-    "./weights/stage2_epoch_7_loss_1.1606_acc_0.5589.pth",
+    "C:/Users/Admin/PycharmProjects/CV-Project/stage2_epoch_7_loss_1.1606_acc_0.5589.pth",
     map_location=device
 ))
 emotion_model.to(device)
