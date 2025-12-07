@@ -15,7 +15,7 @@ def render_camera_manual():
 
     if camera_image is not None:
         image = Image.open(camera_image)
-        st.image(image, caption="Ảnh từ camera", use_column_width=True)
+        st.image(image, caption="Ảnh từ camera", use_container_width=True)
 
         with st.spinner("Đang phân tích cảm xúc..."):
             result = analyze_emotion(image)

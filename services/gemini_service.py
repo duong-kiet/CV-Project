@@ -44,7 +44,7 @@ def create_emotion_intro(emotion: str) -> str:
         Vietnamese introduction sentence
     """
     emotion_vi = emotion_vietnamese.get(emotion, emotion)
-    return f"Bạn đang ở cảm xúc {emotion_vi}. "
+    return f"Khách hàng đang ở cảm xúc {emotion_vi}. "
 
 def get_gemini_api_key() -> Optional[str]:
     """Get Gemini API key from various sources."""
@@ -108,14 +108,14 @@ def init_gemini(api_key: str, model_name: Optional[str] = None):
 
                     if any(
                         ft_model in model_name_clean
-                        for ft_model in ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
+                        for ft_model in ["gemini-1.5-flash", "gemini-1.5-pro"]
                     ):
                         free_tier_models.append(model_name_clean)
 
         preferred_models = [
             "gemini-1.5-flash",  # nhanh, free tier tốt
             "gemini-1.5-pro",
-            "gemini-pro",
+            
         ]
 
         selected_model = None

@@ -16,7 +16,7 @@ def render_upload_image():
 
     if uploaded_file is not None:
         image = Image.open(uploaded_file).convert("RGB")
-        st.image(image, caption="Ảnh đã upload", use_column_width=True)
+        st.image(image, caption="Ảnh đã upload", use_container_width=True)
 
         if st.button("Phân tích cảm xúc"):
             with st.spinner("Đang phân tích cảm xúc..."):

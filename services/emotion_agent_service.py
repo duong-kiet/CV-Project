@@ -5,7 +5,7 @@ import os
 # SQLite MEMORY – Lưu lịch sử cảm xúc khách hàng
 # ==========================
 
-DB_PATH = "emotion_memory.db"
+DB_PATH = "database/emotion_memory.db"
 
 def init_memory_db():
     """Khởi tạo database nếu chưa có."""
@@ -15,6 +15,7 @@ def init_memory_db():
         CREATE TABLE IF NOT EXISTS emotion_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT,
+            phase INTEGER,
             emotion TEXT,
             intensity REAL,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -23,13 +24,13 @@ def init_memory_db():
     conn.commit()
     conn.close()
 
-def save_emotion_history(user_id: str, emotion: str, intensity: float):
+def save_emotion_history(user_id: str, phase: int, emotion: str, intensity: float):
     """Lưu cảm xúc vào SQLite."""
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO emotion_history (user_id, emotion, intensity) VALUES (?, ?, ?)",
-        (user_id, emotion, intensity),
+        "INSERT INTO emotion_history (user_id, phase, emotion, intensity) VALUES (?, ?, ?, ?)",
+        (user_id, phase, emotion, intensity),
     )
     conn.commit()
     conn.close()
@@ -39,12 +40,26 @@ def get_recent_emotions(user_id: str, limit: int = 5):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        "SELECT emotion, intensity, timestamp FROM emotion_history WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+        "SELECT phase, emotion, intensity, timestamp FROM emotion_history WHERE user_id = ? ORDER BY id DESC LIMIT ?",
         (user_id, limit)
     )
     rows = cur.fetchall()
     conn.close()
     return rows
+
+
+# ==========================
+# PHASE MỚI – thêm 1 phase số 0
+# ==========================
+
+PHASE_LABELS = {
+    0: "khi khách vừa bước vào nhà hàng (ấn tượng ban đầu)",
+    1: "khi khách thấy thái độ phục vụ của nhân viên bồi bàn",
+    2: "khi khách nhìn thấy món ăn (đánh giá trình bày)",
+    3: "khi khách đang ăn món ăn",
+    4: "khi khách trò chuyện (không liên quan dịch vụ)",
+    5: "khi khách thanh toán"
+}
 
 
 # ==========================
@@ -55,48 +70,60 @@ def generate_advice_with_memory_from_result(
     model,
     dominant_emotion: str,
     emotions: dict,
+    phase: int,                 # <<< có phase 0 mới
     user_id: str = "default_user"
 ):
     """
-    PHIÊN BẢN CHATBOT NHÀ HÀNG — TIẾNG VIỆT
+    Bản AI nhà hàng – có 6 phase, bổ sung phase 0 mới.
 
-    Nhiệm vụ:
-    - Giải thích ngắn gọn trạng thái cảm xúc khách hàng
-    - Đưa ra hướng dẫn rõ ràng cho nhân viên phục vụ
-    - Không nói như chuyên gia tâm lý
-    - Không trấn an khách
-    - Tập trung vào chất lượng phục vụ và cải thiện trải nghiệm nhà hàng
+    Phase:
+        0 – khách vừa vào nhà hàng (ấn tượng ban đầu)
+        1 – khách đánh giá thái độ phục vụ
+        2 – khách nhìn món ăn
+        3 – khách ăn món ăn
+        4 – khách trò chuyện
+        5 – khách thanh toán
     """
 
     # 1. Lưu vào SQLite
     emotion_intensity = emotions.get(dominant_emotion, 1.0)
-    save_emotion_history(user_id, dominant_emotion, float(emotion_intensity))
+    save_emotion_history(user_id, phase, dominant_emotion, float(emotion_intensity))
 
-    # 2. Lấy lịch sử cảm xúc gần nhất
+    # 2. Lịch sử cảm xúc gần nhất
     recent_history = get_recent_emotions(user_id)
     history_text = "\n".join(
-        [f"- {e} (mức {round(i,2)}) lúc {t}" for e, i, t in recent_history]
+        [f"- Phase {p}: {e} (mức {round(i,2)}) lúc {t}" for p, e, i, t in recent_history]
     ) or "Chưa có lịch sử cảm xúc nào."
 
-    # 3. Prompt tiếng Việt
+    # 3. Mô tả Phase
+    phase_desc = PHASE_LABELS.get(phase, "trạng thái bình thường")
+
+    # 4. Prompt xử lý theo từng phase
     prompt = f"""
-Bạn là **RestaurantAI**, trợ lý nội bộ cho nhà hàng.
+Bạn là RestaurantAI – trợ lý nội bộ dành cho nhân viên nhà hàng.
 
-Hệ thống vừa phát hiện cảm xúc của khách:
-- Cảm xúc chính: **{dominant_emotion}**
+Hệ thống vừa ghi nhận cảm xúc của khách {phase_desc}:
+- Cảm xúc chính: {dominant_emotion}
 - Điểm các cảm xúc: {emotions}
+- Phase hiện tại: {phase}
 
-Lịch sử cảm xúc gần đây của khách:
+Lịch sử cảm xúc gần đây:
 {history_text}
 
-Nhiệm vụ của bạn:
-1. Mô tả ngắn gọn trạng thái cảm xúc hiện tại của khách.
-2. Đưa ra hướng dẫn cụ thể, rõ ràng cho nhân viên phục vụ phải làm NGAY BÂY GIỜ.
-3. Đề xuất bước xử lý tiếp theo nếu cần (ví dụ: kiểm tra món ăn, đổi bàn, xin lỗi, hỏi thăm nhẹ nhàng…)
-4. Không đưa lời khuyên mang tính tâm lý cá nhân.
-5. Không an ủi khách.
-6. Giọng điệu như trợ lý nội bộ nhà hàng — ngắn gọn, tập trung vào nghiệp vụ.
-
+Nhiệm vụ:
+1. Nhận xét ngắn gọn cảm xúc của khách trong đúng giai đoạn này.
+2. Đưa ra hành động CỤ THỂ nhân viên cần làm NGAY.
+3. Tập trung theo từng phase:
+    - Phase 0 → đánh giá ấn tượng ban đầu khi khách bước vào.
+    - Phase 1 → đánh giá thái độ nhân viên bồi bàn.
+    - Phase 2 → đánh giá trình bày món ăn.
+    - Phase 3 → đánh giá chất lượng món ăn khi khách đang ăn.
+    - Phase 4 → chỉ quan sát, không suy diễn thành đánh giá dịch vụ.
+    - Phase 5 → đánh giá dịch vụ thanh toán.
+4. Không an ủi khách.
+5. Không đưa lời khuyên mang tính tâm lý cá nhân.
+6. Giọng điệu sắc nét – nội bộ – tập trung vào hành động.
+7. Trả lời tối đa 5 câu.
 Hãy trả lời bằng tiếng Việt.
 """
 

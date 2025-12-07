@@ -17,6 +17,19 @@ from services.emotion_agent_service import (
 from services.tts_service import text_to_speech_file, estimate_speech_duration, cleanup_audio_file
 
 
+# ===========================
+# Phase labels (0..5) - TIẾNG VIỆT
+# ===========================
+PHASE_LABELS = {
+    0: "Ấn tượng ban đầu khi khách vừa bước vào nhà hàng",
+    1: "Đánh giá thái độ và cách phục vụ của nhân viên bồi bàn",
+    2: "Đánh giá trình bày món ăn khi được mang ra",
+    3: "Đánh giá chất lượng món ăn khi khách đang ăn",
+    4: "Khách trò chuyện – chỉ quan sát, không suy diễn thành đánh giá dịch vụ",
+    5: "Trạng thái bình thường (sau các phase đặc biệt / không vào phase)"
+}
+
+
 class EmotionVideoProcessor(VideoProcessorBase):
     """
     Video processor dùng cho streamlit-webrtc.
@@ -43,13 +56,17 @@ def render_camera_auto(interval_seconds: int = 15):
     Giao diện và logic cho chế độ Camera auto.
     Sequential flow: Detect emotion → Call Gemini → Show response → Detect tiếp
     """
-    st.subheader("🤖 Trợ lý cảm xúc AI - Chế độ tự động")
+
+    st.subheader("🤖 Trợ lý cảm xúc AI - Chế độ tự động (6 phase)")
     st.write(
-        "**Quy trình:** Detect cảm xúc → AI phân tích và đưa lời động viên → Detect tiếp\n\n"
-        "Bật camera bên dưới, hệ thống sẽ tự động detect cảm xúc và đợi AI trả lời xong mới detect tiếp."
+        "**Quy trình:** Detect cảm xúc → AI phân tích → Detect tiếp\n\n"
+        "Khi bật 'Tự động detect', 6 lần detect đầu sẽ tương ứng các phase 0..5 (xem nhãn). "
+        "Sau khi hoàn tất 6 phase, hệ thống sẽ chuyển về trạng thái bình thường (phase 5)."
     )
-    
-    # Khởi tạo session state
+
+    # -------------------------
+    # session_state defaults
+    # -------------------------
     if "previous_emotion" not in st.session_state:
         st.session_state.previous_emotion = None
     if "is_gemini_processing" not in st.session_state:
@@ -64,7 +81,19 @@ def render_camera_auto(interval_seconds: int = 15):
         st.session_state.is_playing_audio = False
     if "current_audio_file" not in st.session_state:
         st.session_state.current_audio_file = None
-    
+
+    # detect_count: số lần special-phase đã chạy (0..6). Khi <6 và auto_mode thì sẽ lấy phase = detect_count (0..5)
+    if "detect_count" not in st.session_state:
+        st.session_state.detect_count = 0
+
+    # lưu phase active gần nhất (0..5). Mặc định là 5 (bình thường)
+    if "current_phase" not in st.session_state:
+        st.session_state.current_phase = 5
+
+    # force_detect flag
+    if "force_detect" not in st.session_state:
+        st.session_state.force_detect = False
+
     # Control buttons
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -75,26 +104,27 @@ def render_camera_auto(interval_seconds: int = 15):
             st.session_state.is_gemini_processing = False
             st.session_state.last_detection_time = 0
             st.session_state.force_detect = True
+            st.session_state.detect_count = 0
+            st.session_state.current_phase = 5
             st.success("✅ Đã reset! Sẵn sàng detect cảm xúc mới.")
-            st.rerun()
-    
+            st.rerun()  # <--- ĐÃ SỬA
+
     with col2:
         if st.button("▶️ Detect cảm xúc ngay"):
             st.session_state.waiting_for_ai = False
             st.session_state.last_detection_time = 0
             st.session_state.force_detect = True
-            st.rerun()
-    
+            st.rerun()  # <--- ĐÃ SỬA
+
     with col3:
         auto_mode = st.checkbox("🔄 Tự động detect", value=False, key="auto_detect_mode")
-    
+
     # TTS settings
     tts_enabled = st.checkbox("🔊 Bật đọc text-to-speech", value=True, key="tts_enabled")
-    
-    # Khởi tạo force_detect flag
-    if "force_detect" not in st.session_state:
-        st.session_state.force_detect = False
 
+    # -------------------------
+    # webrtc streamer
+    # -------------------------
     webrtc_ctx = webrtc_streamer(
         key=f"emotion-auto-{interval_seconds}",
         mode=WebRtcMode.SENDRECV,
@@ -108,13 +138,15 @@ def render_camera_auto(interval_seconds: int = 15):
     status_placeholder = st.empty()
     audio_placeholder = st.empty()
 
+    # -------------------------
+    # nếu webrtc sẵn sàng
+    # -------------------------
     if webrtc_ctx.video_processor is not None:
         processor = webrtc_ctx.video_processor
 
-        # Nếu đang chờ AI response, chỉ hiển thị kết quả cũ
+        # nếu hệ thống đang chờ kết quả Gemini, hiển thị trạng thái và kết quả cũ
         if st.session_state.is_gemini_processing or st.session_state.waiting_for_ai:
             status_placeholder.info("⏳ **Đang chờ AI trả lời...** Vui lòng đợi.")
-            # Hiển thị kết quả cũ nếu có
             if processor.last_result:
                 result = processor.last_result
                 dominant_emotion = result.get("dominant_emotion")
@@ -125,208 +157,241 @@ def render_camera_auto(interval_seconds: int = 15):
                     chart_placeholder.bar_chart(emotions)
             if st.session_state.last_gemini_suggestion:
                 suggestion_placeholder.markdown(
-                    f"### 💬 Gợi ý từ trợ lý cảm xúc\n\n{st.session_state.last_gemini_suggestion}"
+                    f"### 💬 Gợi ý từ trợ lý nhà hàng\n\n{st.session_state.last_gemini_suggestion}"
                 )
-        else:
-            # Kiểm tra xem có nên detect không (auto mode, button được nhấn, hoặc force detect)
-            should_detect = (
-                st.session_state.force_detect or
-                auto_mode or 
-                st.session_state.last_detection_time == 0 or
-                (time.time() - st.session_state.last_detection_time) > interval_seconds
-            )
-            
-            # Reset force_detect flag sau khi dùng
-            if st.session_state.force_detect:
-                st.session_state.force_detect = False
-            
-            # Nếu không đang chờ AI và có frame, luôn capture và detect
-            if should_detect and processor.last_frame_bgr is not None:
-                try:
-                    frame_rgb = processor.last_frame_bgr[:, :, ::-1]  # BGR -> RGB
-                    image = Image.fromarray(frame_rgb)
-                    processor.captured_image = image
+            # không đi tiếp khi chờ AI
+            return
 
-                    # Phân tích cảm xúc
-                    with st.spinner("🔍 Đang phân tích cảm xúc..."):
-                        result = analyze_emotion(image)
-                    processor.last_result = result
-                    st.session_state.last_detection_time = time.time()
-                except Exception as e:
-                    st.warning(f"Lỗi khi detect cảm xúc: {e}")
+        # Kiểm tra có nên detect không (auto mode hoặc force detect hoặc quá thời gian)
+        should_detect = (
+            st.session_state.force_detect
+            or auto_mode
+            or st.session_state.last_detection_time == 0
+            or (time.time() - st.session_state.last_detection_time) > interval_seconds
+        )
 
-        # Hiển thị ảnh nếu có
+        # Reset force_detect flag nếu đã dùng
+        if st.session_state.force_detect:
+            st.session_state.force_detect = False
+
+        # Nếu có frame và cần detect
+        if should_detect and processor.last_frame_bgr is not None:
+            try:
+                frame_rgb = processor.last_frame_bgr[:, :, ::-1]  # BGR -> RGB
+                image = Image.fromarray(frame_rgb)
+                processor.captured_image = image
+
+                # Phân tích cảm xúc (DeepFace)
+                with st.spinner("🔍 Đang phân tích cảm xúc..."):
+                    result = analyze_emotion(image)
+                processor.last_result = result
+                st.session_state.last_detection_time = time.time()
+
+            except Exception as e:
+                # Không để exception làm crash app
+                st.warning(f"Lỗi khi detect cảm xúc: {e}")
+                # hiển thị lỗi trong status, nhưng tiếp tục (không reset state)
+                status_placeholder.error(f"Lỗi detect: {e}")
+                return
+
+        # Hiển thị ảnh đã capture
         if processor.captured_image is not None:
             st.image(
                 processor.captured_image,
                 caption="Ảnh đã capture",
-                use_column_width=True,
+                width='stretch',
             )
 
-        # Xử lý kết quả và gọi Gemini
-        if not st.session_state.is_gemini_processing and not st.session_state.waiting_for_ai:
-            result = processor.last_result
-            if result:
-                dominant_emotion = result.get("dominant_emotion")
-                emotions = result.get("emotion", {})
-
-                result_placeholder.success(f"**Cảm xúc chính**: {dominant_emotion}")
-
-                if emotions:
-                    chart_placeholder.subheader("Chi tiết các cảm xúc")
-                    chart_placeholder.bar_chart(emotions)
-
-                # --- Gọi Gemini CHỈ KHI emotion thay đổi ---
-                api_key = get_gemini_api_key()
-                if not api_key:
-                    suggestion_placeholder.warning(
-                        "⚠️ **Chưa tìm thấy Gemini API key!**\n\n"
-                        "Vui lòng:\n"
-                        "1. Tạo file `.env` trong thư mục gốc với nội dung: `GEMINI_API_KEY=your_key_here`\n"
-                        "2. Hoặc nhập API key ở sidebar\n"
-                        "3. Hoặc set biến môi trường: `export GEMINI_API_KEY=your_key_here`"
-                    )
-                else:
-                    # Khởi tạo model một lần / session
-                    if "gemini_model" not in st.session_state:
-                        with st.spinner("Đang khởi tạo Gemini model..."):
-                            model, model_info = init_gemini(api_key)
-                        if model is None:
-                            suggestion_placeholder.error(f"❌ **Lỗi khởi tạo Gemini:** {model_info}")
-                        else:
-                            st.session_state.gemini_model = model
-                            st.session_state.gemini_model_name = model_info
-
-                    model = st.session_state.get("gemini_model")
-                    if model:
-                        # CHỈ gọi Gemini khi emotion thay đổi
-                        previous_emotion = st.session_state.previous_emotion
-                        emotion_changed = previous_emotion != dominant_emotion
-
-                        if emotion_changed or previous_emotion is None:
-                            # Set flags
-                            st.session_state.is_gemini_processing = True
-                            st.session_state.waiting_for_ai = True
-
-                            # Gọi Gemini + SQLite (memory) và đợi response (blocking) với spinner
-                            with st.spinner(f"🤔 AI trợ lý cảm xúc đang suy nghĩ về cảm xúc '{dominant_emotion}'..."):
-                                try:
-                                    # Sử dụng agent có memory (SQLite) thay vì chỉ cảm xúc hiện tại
-                                    suggestion_text = generate_advice_with_memory_from_result(
-                                        model=model,
-                                        dominant_emotion=dominant_emotion,
-                                        emotions=emotions,
-                                        user_id="default_user",
-                                    )
-                                except Exception as e:
-                                    suggestion_text = f"⚠️ Lỗi khi gọi Gemini: {str(e)}"
-                                    st.error(f"❌ Exception: {e}")
-
-                            # Clear flags sau khi xong
-                            st.session_state.is_gemini_processing = False
-                            st.session_state.waiting_for_ai = False
-
-                            # Lưu emotion và suggestion
-                            st.session_state.previous_emotion = dominant_emotion
-                            st.session_state.last_gemini_suggestion = suggestion_text
-
-                            # Hiển thị response ngay lập tức
-                            if suggestion_text and suggestion_text.strip():
-                                if suggestion_text.startswith("⚠️"):
-                                    suggestion_placeholder.warning(suggestion_text)
-                                    status_placeholder.warning("⚠️ Có lỗi xảy ra khi gọi AI")
-                                else:
-                                    suggestion_placeholder.markdown(
-                                        f"### 💬 Gợi ý từ trợ lý cảm xúc\n\n{suggestion_text}"
-                                    )
-                                    
-                                    # Tạo và phát audio nếu TTS được bật
-                                    if tts_enabled:
-                                        st.session_state.is_playing_audio = True
-                                        
-                                        # Tạo câu giới thiệu cảm xúc
-                                        emotion_intro = create_emotion_intro(dominant_emotion)
-                                        
-                                        # Nối câu giới thiệu với response từ AI
-                                        full_text_to_speak = emotion_intro + suggestion_text
-                                        
-                                        # Tạo audio file
-                                        with st.spinner("🔊 Đang tạo audio..."):
-                                            audio_file = text_to_speech_file(full_text_to_speak, lang="vi", slow=False)
-                                        
-                                        if audio_file:
-                                            st.session_state.current_audio_file = audio_file
-                                            
-                                            # Phát audio trong Streamlit
-                                            audio_placeholder.audio(audio_file, format="audio/mp3", autoplay=True)
-                                            
-                                            # Ước tính thời gian (bao gồm cả intro)
-                                            estimated_duration = estimate_speech_duration(full_text_to_speak)
-                                            status_placeholder.info(
-                                                f"🔊 **Đang phát audio...** (ước tính ~{int(estimated_duration)}s). "
-                                                "Sau khi phát xong sẽ detect cảm xúc tiếp theo."
-                                            )
-                                            
-                                            # Đợi audio phát xong (ước tính)
-                                            time.sleep(estimated_duration + 1)  # +1s buffer
-                                            
-                                            # Cleanup audio file
-                                            cleanup_audio_file(audio_file)
-                                            st.session_state.is_playing_audio = False
-                                            st.session_state.current_audio_file = None
-                                            
-                                            status_placeholder.success("✅ **Đã đọc xong!** Sẵn sàng detect cảm xúc tiếp theo.")
-                                        else:
-                                            st.session_state.is_playing_audio = False
-                                            status_placeholder.warning("⚠️ Không thể tạo audio. Tiếp tục detect cảm xúc...")
-                                    else:
-                                        status_placeholder.success("✅ **AI đã trả lời xong!** Sẵn sàng detect cảm xúc tiếp theo.")
-                            else:
-                                suggestion_placeholder.error(
-                                    f"❌ **Không nhận được phản hồi từ Gemini!**\n\n"
-                                    f"**Debug:** suggestion_text = `{repr(suggestion_text)}`"
-                                )
-                                status_placeholder.error("❌ Không nhận được response từ AI")
-                            
-                            # Nếu auto mode, tự động detect tiếp sau khi có response và audio phát xong
-                            if auto_mode and suggestion_text and not suggestion_text.startswith("⚠️"):
-                                if not tts_enabled or not st.session_state.is_playing_audio:
-                                    # Nếu không có TTS hoặc audio đã phát xong, đợi một chút rồi detect tiếp
-                                    time.sleep(1)  # Đợi 1s để user đọc response
-                                    st.rerun()
-                        else:
-                            # Emotion không đổi, hiển thị suggestion cũ nhưng vẫn tiếp tục detect
-                            if st.session_state.last_gemini_suggestion:
-                                suggestion_placeholder.markdown(
-                                    f"### 💬 Gợi ý từ trợ lý cảm xúc\n\n{st.session_state.last_gemini_suggestion}"
-                                )
-                                status_placeholder.info(
-                                    f"ℹ️ Cảm xúc '{dominant_emotion}' không thay đổi (giống '{previous_emotion}'). "
-                                    "Đang tiếp tục capture và detect cảm xúc mới..."
-                                )
-                            else:
-                                suggestion_placeholder.info(
-                                    f"ℹ️ Cảm xúc '{dominant_emotion}' không thay đổi. "
-                                    "Đang tiếp tục capture và detect cảm xúc mới..."
-                                )
-                            
-                            # Vẫn cập nhật previous_emotion
-                            st.session_state.previous_emotion = dominant_emotion
-                            
-                            # Nếu auto mode, trigger detect tiếp sau interval_seconds
-                            if auto_mode:
-                                # Set thời gian để detect tiếp
-                                st.session_state.last_detection_time = time.time() - interval_seconds + 1
-                                # Tự động rerun sau một chút để detect tiếp
-                                time.sleep(1)
-                                st.rerun()
+        # Nếu có kết quả phân tích thì xử lý
+        result = processor.last_result
+        if not result:
+            # chưa có kết quả
+            if processor.last_frame_bgr is None:
+                result_placeholder.info(
+                    "📷 **Đang chờ camera...** Hãy đảm bảo camera đã được bật và cho phép truy cập."
+                )
             else:
-                if processor.last_frame_bgr is None:
-                    result_placeholder.info(
-                        "📷 **Đang chờ camera...**\n\n"
-                        "Hãy đảm bảo camera đã được bật và cho phép truy cập."
+                result_placeholder.info("💡 Nhấn 'Detect cảm xúc ngay' để bắt đầu phân tích.")
+            return
+
+        # --- lấy kết quả cảm xúc ---
+        dominant_emotion = result.get("dominant_emotion")
+        emotions = result.get("emotion", {})
+
+        result_placeholder.success(f"**Cảm xúc chính**: {dominant_emotion}")
+        if emotions:
+            chart_placeholder.subheader("Chi tiết các cảm xúc")
+            chart_placeholder.bar_chart(emotions)
+
+        # -------------------------
+        # XÁC ĐỊNH PHASE
+        # Logic:
+        # - Nếu auto_mode is True và detect_count < 6: phase = detect_count (0..5), sau khi xử lý thành công tăng detect_count
+        # - Nếu auto_mode False: giữ current_phase (do user chọn hoặc default)
+        # - Khi detect_count >=6 => current_phase = 5 (bình thường)
+        # -------------------------
+        if auto_mode:
+            if st.session_state.detect_count < 6:
+                phase = st.session_state.detect_count  # 0..5
+            else:
+                phase = 5
+        else:
+            # manual mode -> sử dụng current_phase (mặc định 5)
+            phase = st.session_state.current_phase if isinstance(st.session_state.current_phase, int) else 5
+
+        # Hiển thị nhãn phase hiện tại
+        phase_label = PHASE_LABELS.get(phase, "Trạng thái không xác định")
+        status_placeholder.info(f"🔎 Phase {phase}: {phase_label}")
+
+        # -------------------------
+        # GỌI GEMINI (hoặc agent) CHỈ KHI:
+        # - model key có sẵn
+        # - và (cảm xúc thay đổi so với previous_emotion) OR (lần đầu cho phase này)
+        # -------------------------
+        api_key = get_gemini_api_key()
+        if not api_key:
+            suggestion_placeholder.warning(
+                "⚠️ **Chưa tìm thấy Gemini API key!**\n\n"
+                "Vui lòng: tạo file `.env` với GEMINI_API_KEY=your_key_here hoặc nhập ở sidebar."
+            )
+            return
+
+        # Khởi tạo model 1 lần / session
+        if "gemini_model" not in st.session_state:
+            try:
+                with st.spinner("Đang khởi tạo Gemini model..."):
+                    model, model_info = init_gemini(api_key)
+                if model is None:
+                    suggestion_placeholder.error(f"❌ Lỗi khởi tạo Gemini: {model_info}")
+                    return
+                st.session_state.gemini_model = model
+                st.session_state.gemini_model_name = model_info
+            except Exception as e:
+                suggestion_placeholder.error(f"❌ Lỗi khi khởi tạo Gemini: {e}")
+                return
+
+        model = st.session_state.get("gemini_model")
+
+        # Quyết định có gọi AI hay không
+        previous_emotion = st.session_state.previous_emotion
+        # track first call per phase to allow AI even nếu emotion không đổi
+        if "phase_called" not in st.session_state:
+            st.session_state.phase_called = set()
+
+        need_call_ai = False
+        # Nếu cảm xúc thay đổi so với trước đó -> gọi
+        if previous_emotion is None or previous_emotion != dominant_emotion:
+            need_call_ai = True
+        # Hoặc lần đầu cho phase này (chưa gọi AI cho phase)
+        if phase not in st.session_state.phase_called:
+            need_call_ai = True
+
+        if need_call_ai:
+            # set flags
+            st.session_state.is_gemini_processing = True
+            st.session_state.waiting_for_ai = True
+
+            with st.spinner(f"🤔 AI trợ lý nhà hàng đang phân tích cảm xúc '{dominant_emotion}' (phase {phase})..."):
+                try:
+                    suggestion_text = generate_advice_with_memory_from_result(
+                        model=model,
+                        dominant_emotion=dominant_emotion,
+                        emotions=emotions,
+                        phase=phase,
+                        user_id="default_user",
                     )
+                except Exception as e:
+                    suggestion_text = f"⚠️ Lỗi khi gọi Gemini: {e}"
+                # đảm bảo không ném exception ra ngoài
+
+            # clear flags
+            st.session_state.is_gemini_processing = False
+            st.session_state.waiting_for_ai = False
+
+            # lưu kết quả
+            st.session_state.previous_emotion = dominant_emotion
+            st.session_state.last_gemini_suggestion = suggestion_text
+            st.session_state.phase_called.add(phase)
+            st.session_state.current_phase = phase
+
+            # hiển thị
+            if suggestion_text and suggestion_text.strip():
+                if suggestion_text.startswith("⚠️"):
+                    suggestion_placeholder.warning(suggestion_text)
+                    status_placeholder.warning("⚠️ Có lỗi xảy ra khi gọi AI")
+                    # Vẫn tăng detect_count kể cả khi AI lỗi
+                    if auto_mode and phase < 5 and st.session_state.detect_count == phase:
+                        st.session_state.detect_count += 1
+                        st.session_state.last_detection_time = 0
+                        st.rerun()  # <--- ĐÃ SỬA
                 else:
-                    result_placeholder.info("💡 Nhấn 'Detect cảm xúc ngay' để bắt đầu phân tích.")
+                    suggestion_placeholder.markdown(
+                        f"### 💬 Gợi ý từ trợ lý nhà hàng (Phase {phase})\n\n{suggestion_text}"
+                    )
 
+                    # TTS (tùy chọn)
+                    if tts_enabled:
+                        try:
+                            st.session_state.is_playing_audio = True
 
+                            emotion_intro = create_emotion_intro(dominant_emotion)
+                            full_text_to_speak = f"{emotion_intro} {suggestion_text}"
+
+                            audio_file = text_to_speech_file(full_text_to_speak, lang="vi", slow=False)
+                            if audio_file:
+                                st.session_state.current_audio_file = audio_file
+                                audio_placeholder.audio(audio_file, format="audio/mp3", autoplay=True)
+
+                                # estimate duration (fallback 2s nếu lỗi)
+                                try:
+                                    estimated_duration = estimate_speech_duration(full_text_to_speak)
+                                    time_to_wait = max(1.0, float(estimated_duration) + 0.5)
+                                except Exception:
+                                    time_to_wait = 2.0
+
+                                status_placeholder.info(f"🔊 Đang phát audio... (ước tính ~{int(time_to_wait)}s)")
+
+                                # đợi một chút cho audio play (không khối quá lâu)
+                                time.sleep(time_to_wait)
+
+                                # cleanup
+                                cleanup_audio_file(audio_file)
+                                st.session_state.is_playing_audio = False
+                                st.session_state.current_audio_file = None
+
+                                status_placeholder.success("✅ Đã đọc xong! Sẵn sàng detect tiếp theo.")
+                                
+                                # Tăng detect_count để chuyển sang phase tiếp theo
+                                if auto_mode and phase < 5 and st.session_state.detect_count == phase:
+                                    st.session_state.detect_count += 1
+                                    st.session_state.last_detection_time = 0
+                                    st.rerun()  # <--- ĐÃ SỬA
+
+                            else:
+                                st.session_state.is_playing_audio = False
+                                status_placeholder.warning("⚠️ Không thể tạo audio. Tiếp tục detect...")
+                        except Exception as e:
+                            # Không để lỗi TTS làm crash
+                            st.warning(f"Lỗi TTS: {e}")
+                            st.session_state.is_playing_audio = False
+                    else:
+                        status_placeholder.success("✅ AI đã trả lời xong! Sẵn sàng detect tiếp theo.")
+                        
+                        # Tăng detect_count để chuyển sang phase tiếp theo
+                        if auto_mode and phase < 5 and st.session_state.detect_count == phase:
+                            st.session_state.detect_count += 1
+                            st.session_state.last_detection_time = 0
+                            st.rerun()  # <--- ĐÃ SỬA
+            else:
+                suggestion_placeholder.error("❌ Không nhận được phản hồi từ AI.")
+        else:
+            # không cần gọi AI, hiển thị suggestion cũ (nếu có)
+            if st.session_state.last_gemini_suggestion:
+                suggestion_placeholder.markdown(
+                    f"### 💬 Gợi ý từ trợ lý nhà hàng (cũ)\n\n{st.session_state.last_gemini_suggestion}"
+                )
+            status_placeholder.info("ℹ️ Cảm xúc không thay đổi và phase đã được xử lý trước đó. Tiếp tục detect...")
+
+        # Nếu auto_mode bật nhưng đã hoàn tất 6 phase, đặt current_phase = 5 (bình thường)
+        if auto_mode and st.session_state.detect_count >= 6:
+            st.session_state.current_phase = 5
