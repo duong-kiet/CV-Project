@@ -8,5 +8,5 @@ streamlit-autorefresh
 google-generativeai
 python-dotenv
 edge-tts
-
+ultralytics
 

@@ -170,9 +170,8 @@ def render_navbar_and_hero():
                 <div class="hero-badge">Real-time AI Demo</div>
                 <h1>Phát hiện Emotion thời gian thực trên Web</h1>
                 <p>
-                    Ứng dụng demo sử dụng DeepFace để detect cảm xúc từ camera hoặc ảnh upload.
-                    Do giới hạn của Streamlit, camera hoạt động theo kiểu chụp từng frame (gần real-time),
-                    không phải video stream liên tục như ứng dụng desktop.
+                    Ứng dụng demo sử dụng DeepFace cho phép nhận diện cảm xúc khuôn mặt từ camera theo thời gian thực, hiển thị trực tiếp trạng thái cảm xúc kèm theo mức độ chính xác. 
+                    Bằng cách phân tích từng khung hình và áp dụng thuật toán học sâu, ứng dụng giúp người dùng quan sát nhanh biểu cảm như vui, buồn, giận hay ngạc nhiên ngay trên giao diện.
                 </p>
                 <div class="hero-actions">
                     <a class="cta-btn cta-primary" href="#camera">Bắt đầu ngay</a>

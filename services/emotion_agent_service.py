@@ -1,4 +1,5 @@
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
+import numpy as np
 
 from PIL import Image
 
@@ -23,12 +24,24 @@ def _generate_advice_with_memory_core(
     user_id: str,
     dominant_emotion: str,
     emotions: Dict[str, Any],
+    similarity: Optional[float] = None,
+    face_embedding: Optional[np.ndarray] = None,
+    box: Optional[List[int]] = None,
 ) -> Optional[str]:
     """
     Logic chung:
     - Lấy lịch sử từ SQLite TRƯỚC (để lấy cảm xúc cũ thật sự)
     - Lưu lần đo này vào SQLite SAU (để lần sau có thể query)
     - Dùng Gemini sinh lời khuyên có context
+    
+    Args:
+        model: Gemini model đã khởi tạo
+        user_id: ID người dùng (face_id)
+        dominant_emotion: Cảm xúc chính
+        emotions: Dict các cảm xúc và xác suất
+        similarity: Độ tương đồng với face đã biết
+        face_embedding: Vector đặc trưng khuôn mặt (512-D)
+        box: Bounding box [x1, y1, x2, y2]
     """
     # 1. Lấy lịch sử cảm xúc gần đây TRƯỚC (trước khi insert cảm xúc hiện tại)
     try:
@@ -69,40 +82,55 @@ def _generate_advice_with_memory_core(
             user_id=user_id,
             dominant_emotion=dominant_emotion,
             emotions=emotions,
+            similarity=similarity,
+            face_embedding=face_embedding,
+            box=box,
         )
     except Exception as e:
         # Log rõ lỗi để biết vì sao emotion_memory trống
         print("ERROR upsert_emotion_memory:", e)
 
     # 3. Xây dựng prompt cho một lần gọi model duy nhất
+    # Bối cảnh: AI agent hỗ trợ nhà hàng, đưa chỉ dẫn cho nhân viên phục vụ
+    
     if context_block.strip():
-        # Có lịch sử trong SQLite: dùng cả cảm xúc cũ + hiện tại
+        # Có lịch sử: khách quen hoặc đã theo dõi trước đó
         prompt = f"""
-Bạn là trợ lý cảm xúc có trí nhớ dài hạn.
+Bạn là trợ lý AI thông minh hỗ trợ nhân viên nhà hàng. Nhiệm vụ của bạn là phân tích cảm xúc khách hàng và đưa ra hướng dẫn cụ thể cho nhân viên phục vụ.
 
-Dưới đây là một số lần đo cảm xúc gần đây của người dùng (từ ảnh khuôn mặt):
+**Thông tin khách hàng (ID: {user_id}):**
+Lịch sử cảm xúc gần đây:
 {context_block}
 
-Hiện tại, cảm xúc chính của người dùng là: {dominant_emotion}.
+**Cảm xúc hiện tại:** {dominant_emotion}
 
-Hãy trả lời một phiên bản ngắn gọn, tập trung vào:
-- Nhận xét xu hướng cảm xúc gần đây nếu có (1–2 câu).
-- Gợi ý hành động cụ thể, thực tế, phù hợp với cảm xúc hiện tại (2–3 câu).
+**Yêu cầu:** Hãy đưa ra hướng dẫn ngắn gọn cho nhân viên phục vụ:
+1. **Nhận định tình trạng:** Phân tích ngắn gọn cảm xúc khách và xu hướng thay đổi (1-2 câu)
+2. **Cách tiếp cận:** Gợi ý cách giao tiếp, thái độ phục vụ phù hợp (2-3 câu)
+3. **Hành động cụ thể:** Đề xuất 1-2 hành động cụ thể (ví dụ: đề xuất món, tặng đồ uống, giảm âm lượng nhạc...)
 
-Trả lời bằng tiếng Việt.
+Trả lời bằng tiếng Việt, ngắn gọn, thực tế và dễ áp dụng ngay.
 """
     else:
-        # Không có lịch sử: chỉ dùng cảm xúc hiện tại
+        # Khách mới, chưa có lịch sử
         prompt = f"""
-Bạn là một trợ lý cảm xúc chuyên nghiệp.
+Bạn là trợ lý AI thông minh hỗ trợ nhân viên nhà hàng. Nhiệm vụ của bạn là phân tích cảm xúc khách hàng và đưa ra hướng dẫn cụ thể cho nhân viên phục vụ.
 
-Hiện tại người dùng đang có cảm xúc chính là: {dominant_emotion}.
+**Khách hàng mới (ID: {user_id})**
+**Cảm xúc hiện tại:** {dominant_emotion}
 
-Hãy:
-- Mô tả ngắn gọn trạng thái cảm xúc hiện tại (1–2 câu).
-- Đưa ra 2–3 câu ngắn gọn gợi ý thực tế, nhẹ nhàng, giúp người dùng đối diện và điều chỉnh cảm xúc này.
+**Yêu cầu:** Hãy đưa ra hướng dẫn ngắn gọn cho nhân viên phục vụ:
+1. **Nhận định:** Mô tả ngắn gọn trạng thái cảm xúc khách hàng (1 câu)
+2. **Cách tiếp cận:** Gợi ý cách chào hỏi, thái độ phục vụ phù hợp với cảm xúc này (2 câu)
+3. **Hành động cụ thể:** Đề xuất 1-2 hành động để nâng cao trải nghiệm khách hàng
 
-Trả lời bằng tiếng Việt.
+**Lưu ý theo cảm xúc:**
+- Happy/Neutral: Duy trì không khí tích cực, giới thiệu món đặc biệt
+- Sad/Fear: Tạo không gian riêng tư, phục vụ chu đáo, nhẹ nhàng
+- Anger/Disgust: Xử lý nhanh, lịch sự, tránh để khách chờ đợi
+- Surprise: Tận dụng cơ hội tạo ấn tượng tốt
+
+Trả lời bằng tiếng Việt, thực tế  và ngắn gọn nhất có thể.
 """
 
     print("Prompt generate advice with memory core:", prompt)
@@ -161,11 +189,15 @@ def generate_advice_with_memory_from_result(
     dominant_emotion: str,
     emotions: Dict[str, Any],
     user_id: str = "default_user",
+    similarity: Optional[float] = None,
+    face_embedding: Optional[np.ndarray] = None,
+    box: Optional[List[int]] = None,
 ) -> Optional[str]:
     """
     Dùng khi bạn đã có:
     - model Gemini (đã init sẵn)
-    - dominant_emotion + emotions (từ DeepFace)
+    - dominant_emotion + emotions (từ MLT model)
+    - Các thông tin face: similarity, face_embedding, box
 
     → Gọi SQLite + Gemini để sinh lời khuyên có context.
     """
@@ -177,5 +209,7 @@ def generate_advice_with_memory_from_result(
         user_id=user_id,
         dominant_emotion=dominant_emotion,
         emotions=emotions,
+        similarity=similarity,
+        face_embedding=face_embedding,
+        box=box,
     )
-
