@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="84a75899-f174-4d6d-9289-833e92bdecd7" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/.name" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.name" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/facenet/facenet_pytorch/.github/FUNDING.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/facenet/facenet_pytorch/.github/workflows/python.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/facenet/facenet_pytorch/models/utils/tensorflow2pytorch.py" beforeDir="false" afterPath="$PROJECT_DIR$/facenet/facenet_pytorch/models/utils/tensorflow2pytorch.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/facenet/facenet_pytorch/tests/actions_test.py" beforeDir="false" afterPath="$PROJECT_DIR$/facenet/facenet_pytorch/tests/actions_test.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/facenet/facenet_pytorch/tests/perf_test.py" beforeDir="false" afterPath="$PROJECT_DIR$/facenet/facenet_pytorch/tests/perf_test.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/services/MLT.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/MLT.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/services/deepface_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/deepface_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/services/emotion_agent_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/emotion_agent_service.py" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 8
+}</component>
+  <component name="ProjectId" id="36R32rsZgYnmlQJx1qmQBPL1MwG" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Python.Deep_OpenFace.executor": "Run",
+    "Python.app.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "git-widget-placeholder": "feature/hybrid__deepface",
+    "last_opened_file_path": "C:/Users/Admin/PycharmProjects/YOLOv8_Face",
+    "settings.editor.selected.configurable": "configurable.group.appearance"
+  }
+}]]></component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-python-sdk-98f27166c754-ba05f1cad1b1-com.jetbrains.pycharm.community.sharedIndexes.bundled-PC-242.21829.153" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="84a75899-f174-4d6d-9289-833e92bdecd7" name="Changes" comment="" />
+      <created>1764955352693</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1764955352693</updated>
+    </task>
+    <servers />
+  </component>
+</project>
