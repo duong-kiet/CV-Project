@@ -64,10 +64,21 @@ def render_camera_auto(interval_seconds: int = 15):
     if "current_audio_file" not in st.session_state:
         st.session_state.current_audio_file = None
     
+    # Style cho nút/checkbox (font 16px)
+    st.markdown(
+        """
+        <style>
+        .stMarkdown { font-size: 16px; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     # Control buttons
-    col1, col2, col3 = st.columns(3)
+    # Gom các control sát nhau với khoảng cách nhỏ và spacer bên phải
+    col1, col2, col3, _ = st.columns([5, 5, 5, 10], gap="small")
     with col1:
-        if st.button("🔄 Reset và bắt đầu lại"):
+        if st.button("🔄 Reset và bắt đầu lại", use_container_width=True):
             st.session_state.previous_emotion = None
             st.session_state.last_gemini_suggestion = None
             st.session_state.waiting_for_ai = False
@@ -78,7 +89,7 @@ def render_camera_auto(interval_seconds: int = 15):
             st.rerun()
     
     with col2:
-        if st.button("▶️ Detect cảm xúc ngay"):
+        if st.button("▶️ Detect cảm xúc ngay", use_container_width=True):
             st.session_state.waiting_for_ai = False
             st.session_state.last_detection_time = 0
             st.session_state.force_detect = True
